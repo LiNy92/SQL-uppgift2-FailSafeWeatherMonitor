@@ -32,4 +32,13 @@ public class FailSafeWeatherMonitorDbContext : DbContext
                 @"Data Source=(localdb)\MSSQLLocalDB;Initial Catalog=FailSafeWeatherDataPoint;Integrated Security=True;Connect Timeout=30;Encrypt=True;Trust Server Certificate=False;Application Intent=ReadWrite;Multi Subnet Failover=False;Command Timeout=30");
         }
     }
+
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<WeatherDataPoint>()
+            .HasIndex(w => new { w.StationName, w.Timestamp })
+            .IsUnique();
+
+    }
 }
