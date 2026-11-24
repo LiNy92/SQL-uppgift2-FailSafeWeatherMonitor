@@ -28,9 +28,13 @@ internal class Program
             {
                 case "Importera historik":
                     {
-                        var db = new FailSafeWeatherMonitorDbContext();
+                        using var db = new FailSafeWeatherMonitorDbContext();
                         var importFile = new WeatherDataImporter(db);
-                        importFile.ImportFromTableFile("weather_data.json");
+
+                        ImporteraJsonFil(importFile);
+
+
+                        //importFile.ImportFromTableFile("weather_data.json");
                         break;
                     }
 
@@ -56,11 +60,33 @@ internal class Program
             Console.WriteLine();
 
         }
+
+
+
+
+        static void ImporteraJsonFil(WeatherDataImporter importFile)
+        {
+
+            try
+            {
+                var result = importFile.ImportFromTableFile("weather_data.json");
+
+                AnsiConsole.MarkupLine($"[PaleGreen3_1]Import klar![/] Godkända: [bold]{result.ImportedCount}[/] | Avvisade: [bold]{result.Errors.Count}[/]");
+                foreach (var err in result.Errors)
+                {
+                    AnsiConsole.MarkupLine($"  - {Markup.Escape(err)}");
+                }
+
+            }
+            catch (IOException ex)
+            {
+                AnsiConsole.MarkupLine($"[red]Kunde inte läsa JSON-filen:[/] {Markup.Escape(ex.Message)}");
+            }
+            catch (JsonException ex)
+            {
+                AnsiConsole.MarkupLine($"[red]Ogiltig Json-fil[] '{Markup.Escape(ex.Message)}'");
+            }
+        }
+
     }
-
-
-
-
-
-
 }

@@ -1,15 +1,13 @@
 ﻿using FailSafeWeatherMonitor.Core;
-using System;
-using System.Collections.Generic;
 using System.Globalization;
-using System.Text;
 using System.Text.Json;
 
 namespace FailSafeWeatherMonitor.Data;
 
+public record ImportResult(int ImportedCount, List<string> Errors);
 public class WeatherDataImporter(FailSafeWeatherMonitorDbContext _db)
 {
-    public void ImportFromTableFile(string filePath)
+    public ImportResult ImportFromTableFile(string filePath)
     {
         var lines = File.ReadAllLines(filePath);
         var existingData = _db.WeatherDataPoints
@@ -26,7 +24,7 @@ public class WeatherDataImporter(FailSafeWeatherMonitorDbContext _db)
         var MinTemp = -70;
         var MaxTemp = 50;
 
-        for (int i = 1; i < lines.Length; i++)
+        for (int i = 0; i < lines.Length; i++)
         {
             var line = lines[i].Trim();
             if (line == "[" || line == "]" || string.IsNullOrWhiteSpace(line))
@@ -34,7 +32,7 @@ public class WeatherDataImporter(FailSafeWeatherMonitorDbContext _db)
                 continue;
             }
             string json = line.TrimEnd(',');
-            
+
             int rowNumber = i + 1;
             string stationName = "";
             string timestamp = "";
@@ -45,12 +43,12 @@ public class WeatherDataImporter(FailSafeWeatherMonitorDbContext _db)
             {
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
-                stationName = GetField(root, "StationName");
-                timestamp = GetField(root, "Timestamp");
-                temperature = GetField(root, "Temperature");
-                humidity = GetField(root, "Humidity");
+                stationName = GetField(root, "StationName").Trim();
+                timestamp = GetField(root, "Timestamp").Trim();
+                temperature = GetField(root, "Temperature").Trim();
+                humidity = GetField(root, "Humidity").Trim();
 
-                
+
             }
             catch (JsonException ex)
             {
@@ -61,9 +59,8 @@ public class WeatherDataImporter(FailSafeWeatherMonitorDbContext _db)
 
 
 
-
-            // Validera stationsnamn & dubbletter
-            if (string.IsNullOrWhiteSpace(stationName))
+            // Validera indata & dubbletter
+            if (string.IsNullOrWhiteSpace(stationName) || stationName.Length > 50)
             {
                 errors.Add($"Rad {rowNumber}: Stationsnamn: Ogiltigt '{stationName}'");
                 badData.Add(lines[i]);
@@ -97,9 +94,9 @@ public class WeatherDataImporter(FailSafeWeatherMonitorDbContext _db)
             humidity = humidity.Replace(',', '.');
             if (!double.TryParse(humidity, CultureInfo.InvariantCulture, out double parsedHumidity))
             {
-                    errors.Add($"Rad {rowNumber}: Luftfuktigheten: Ogiltigt värde '{humidity}'.");
-                    badData.Add(lines[i]);
-                    continue;
+                errors.Add($"Rad {rowNumber}: Luftfuktigheten: Ogiltigt värde '{humidity}'.");
+                badData.Add(lines[i]);
+                continue;
             }
 
             if (parsedHumidity < 0 || parsedHumidity > 100)
@@ -109,7 +106,7 @@ public class WeatherDataImporter(FailSafeWeatherMonitorDbContext _db)
                 continue;
             }
 
-            if (existingData.Contains((stationName, parsedTimestamp)) || !seenInFile.Add((stationName, parsedTimestamp)))
+            if (existingData.Contains((stationName.ToUpper(), parsedTimestamp)) || !seenInFile.Add((stationName.ToUpper(), parsedTimestamp)))
             {
                 errors.Add($"Rad {rowNumber}: Stationsnamn: Dubblett av '{stationName}'");
                 badData.Add(lines[i]);
@@ -129,22 +126,24 @@ public class WeatherDataImporter(FailSafeWeatherMonitorDbContext _db)
         }
 
         File.WriteAllLines("bad_data.log", badData);
-        _db.WeatherDataPoints.AddRange(validWeatherDataPoints);
-        _db.SaveChanges();
 
-        Console.WriteLine($"Import klar! Godkända: {validWeatherDataPoints.Count} | Avvisade: {errors.Count}");
-        foreach (var err in errors)
+
+        try
         {
-            Console.WriteLine($"  - {err}");
+            _db.WeatherDataPoints.AddRange(validWeatherDataPoints);
+            _db.SaveChanges();
         }
+        catch (Exception ex)
+        {
+            errors.Add($"Fel:Gick ej att spara till databas: {ex.Message}");
+            return new ImportResult(0, errors);
+        }
+        return new ImportResult(validWeatherDataPoints.Count, errors);
+
     }
 
 
-
-
-
-
-    private static string GetField(JsonElement root,string fieldName)
+private static string GetField(JsonElement root,string fieldName)
     {
         if (root.TryGetProperty(fieldName, out var name))
         {

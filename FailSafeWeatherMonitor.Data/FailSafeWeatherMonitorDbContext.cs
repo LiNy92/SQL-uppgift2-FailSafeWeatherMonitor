@@ -30,17 +30,12 @@ public class FailSafeWeatherMonitorDbContext : DbContext
     {
         if (!optionsBuilder.IsConfigured)
         {
-
-
-
             var config = new ConfigurationBuilder()
                 .SetBasePath(AppContext.BaseDirectory)
                 .AddJsonFile("appsettings.json")
                 .Build();
 
             var connectionString = config.GetConnectionString("DefaultConnection");
-
-
             optionsBuilder.UseSqlServer(connectionString);
 
         }
