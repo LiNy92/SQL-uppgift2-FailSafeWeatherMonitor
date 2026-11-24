@@ -22,9 +22,9 @@ public class WeatherDataImporter(FailSafeWeatherMonitorDbContext _db)
         var errors = new List<string>();
         var badData = new List<string>();
 
-        //Utgår från observationsgränser i Sveirge där giltighetsintervallet är satt mellan -60 och +40 grader celsius.
-        var MinTemp = -60;
-        var MaxTemp = 40;
+        //Utgår från observationsgränser i Sveirge där giltighetsintervallet är satt mellan -60 och +40 grader celsius, tar höjd med 10 grader åt vardera håll för framtida förändringar.
+        var MinTemp = -70;
+        var MaxTemp = 50;
 
         for (int i = 1; i < lines.Length; i++)
         {
@@ -54,7 +54,7 @@ public class WeatherDataImporter(FailSafeWeatherMonitorDbContext _db)
             }
             catch (JsonException ex)
             {
-                errors.Add($"Rad {rowNumber} är ogiltig - {ex.Message}");
+                errors.Add($"Rad {rowNumber} Jsonfel '{ex.Message}'");
                 badData.Add(lines[i]);
                 continue;
             }
@@ -65,22 +65,23 @@ public class WeatherDataImporter(FailSafeWeatherMonitorDbContext _db)
             // Validera stationsnamn & dubbletter
             if (string.IsNullOrWhiteSpace(stationName))
             {
-                errors.Add($"Rad {rowNumber}: Ogiltigt Stationsnamn: '{stationName}'");
+                errors.Add($"Rad {rowNumber}: Stationsnamn: Ogiltigt '{stationName}'");
                 badData.Add(lines[i]);
                 continue;
             }
 
             if (!DateTime.TryParse(timestamp, CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime parsedTimestamp))
             {
-                errors.Add($"Rad {rowNumber}: Tidsstämpeln '{timestamp}' är ogiltig.");
+                errors.Add($"Rad {rowNumber}: Tidsstämpel: Ogiltigt värde '{timestamp}'");
                 badData.Add(lines[i]);
                 continue;
             }
 
+            temperature = temperature.Replace(',', '.');
             if (!double.TryParse(temperature, CultureInfo.InvariantCulture, out double parsedTemperature))
             {
 
-                errors.Add($"Rad {rowNumber}: Ogiltigt värde '{temperature}'.");
+                errors.Add($"Rad {rowNumber}: Temperatur: Ogiltigt värde '{temperature}'.");
                 badData.Add(lines[i]);
                 continue;
 
@@ -88,28 +89,29 @@ public class WeatherDataImporter(FailSafeWeatherMonitorDbContext _db)
 
             if (parsedTemperature < MinTemp || parsedTemperature > MaxTemp)
             {
-                errors.Add($"Rad {rowNumber}: Ogiltigt värde '{temperature}' ligger utanför giltigt intervall.");
+                errors.Add($"Rad {rowNumber}: Temperatur: Ogiltigt värde '{temperature}' ligger utanför giltigt intervall.");
                 badData.Add(lines[i]);
                 continue;
             }
 
+            humidity = humidity.Replace(',', '.');
             if (!double.TryParse(humidity, CultureInfo.InvariantCulture, out double parsedHumidity))
             {
-                    errors.Add($"Rad {rowNumber}: Luftfuktigheten '{humidity}' är ogiltig.");
+                    errors.Add($"Rad {rowNumber}: Luftfuktigheten: Ogiltigt värde '{humidity}'.");
                     badData.Add(lines[i]);
                     continue;
             }
 
             if (parsedHumidity < 0 || parsedHumidity > 100)
             {
-                errors.Add($"Rad {rowNumber}: Luftfuktigheten '{humidity}' är ogiltig.");
+                errors.Add($"Rad {rowNumber}: Luftfuktigheten: Ogiltigt värde '{humidity}'");
                 badData.Add(lines[i]);
                 continue;
             }
 
             if (existingData.Contains((stationName, parsedTimestamp)) || !seenInFile.Add((stationName, parsedTimestamp)))
             {
-                errors.Add($"Rad {rowNumber}: Dubblett av stationen: '{stationName}'");
+                errors.Add($"Rad {rowNumber}: Stationsnamn: Dubblett av '{stationName}'");
                 badData.Add(lines[i]);
                 continue;
             }

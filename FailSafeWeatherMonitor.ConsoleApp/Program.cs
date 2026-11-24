@@ -1,5 +1,6 @@
 ﻿using FailSafeWeatherMonitor.Data;
 using Spectre.Console;
+using System.Text.Json;
 
 namespace FailSafeWeatherMonitor.ConsoleApp;
 
@@ -56,4 +57,10 @@ internal class Program
 
         }
     }
+
+
+
+
+
+
 }
