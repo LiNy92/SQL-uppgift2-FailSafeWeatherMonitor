@@ -1,4 +1,5 @@
-﻿using Spectre.Console;
+﻿using FailSafeWeatherMonitor.Data;
+using Spectre.Console;
 
 namespace FailSafeWeatherMonitor.ConsoleApp;
 
@@ -24,13 +25,17 @@ internal class Program
 
             switch (choice)
             {
-                case "Importera histortik":
+                case "Importera historik":
                     {
+                        var db = new FailSafeWeatherMonitorDbContext();
+                        var importFile = new WeatherDataImporter(db);
+                        importFile.ImportFromTableFile("weather_data.json");
                         break;
                     }
 
                 case "Hämta live-data":
                     {
+                        //Metod för live-data
                         break;
                     }
 

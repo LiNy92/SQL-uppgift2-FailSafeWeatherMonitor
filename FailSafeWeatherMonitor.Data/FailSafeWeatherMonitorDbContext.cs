@@ -1,5 +1,7 @@
 ﻿using FailSafeWeatherMonitor.Core;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
+using Microsoft.Extensions.Configuration;
 
 namespace FailSafeWeatherMonitor.Data;
 
@@ -28,8 +30,19 @@ public class FailSafeWeatherMonitorDbContext : DbContext
     {
         if (!optionsBuilder.IsConfigured)
         {
-            optionsBuilder.UseSqlServer(
-                @"Data Source=(localdb)\MSSQLLocalDB;Initial Catalog=FailSafeWeatherDataPoint;Integrated Security=True;Connect Timeout=30;Encrypt=True;Trust Server Certificate=False;Application Intent=ReadWrite;Multi Subnet Failover=False;Command Timeout=30");
+
+
+
+            var config = new ConfigurationBuilder()
+                .SetBasePath(AppContext.BaseDirectory)
+                .AddJsonFile("appsettings.json")
+                .Build();
+
+            var connectionString = config.GetConnectionString("DefaultConnection");
+
+
+            optionsBuilder.UseSqlServer(connectionString);
+
         }
     }
 
