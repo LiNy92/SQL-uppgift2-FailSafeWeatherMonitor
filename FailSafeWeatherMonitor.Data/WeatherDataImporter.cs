@@ -1,28 +1,42 @@
 ﻿using FailSafeWeatherMonitor.Core;
 using System.Globalization;
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using System.Data.Common;
 
 namespace FailSafeWeatherMonitor.Data;
 
-public record ImportResult(int ImportedCount, List<string> Errors);
+public record ImportResult(int ImportedCount, int RejectedCount, List<string> Errors);
 public class WeatherDataImporter(FailSafeWeatherMonitorDbContext _db)
 {
-    public ImportResult ImportFromTableFile(string filePath)
+    public async Task<ImportResult> ImportFromTableFileAsync(string filePath)
     {
-        var lines = File.ReadAllLines(filePath);
-        var existingData = _db.WeatherDataPoints
-            .AsEnumerable()
-            .Select(w => (w.StationName.ToUpper(), w.Timestamp))
-            .ToHashSet();
+        var lines = await File.ReadAllLinesAsync(filePath);
+        var errors = new List<string>();
+        HashSet<(string StationName, DateTime Timestamp)> existingData;
 
+        try
+        {
+            existingData = (await _db.WeatherDataPoints
+                .AsNoTracking()
+                .Select(w => new { w.StationName, w.Timestamp })
+                .ToListAsync())
+                .Select(w => (w.StationName.ToUpperInvariant(), w.Timestamp))
+                .ToHashSet();
+        }
+        catch (DbException ex)
+        {
+            errors.Add($"Kunde inte läsa befintliga mätningar från databasen: {ex.Message}");
+            return new ImportResult(0, 0, errors);
+        }
         var seenInFile = new HashSet<(string, DateTime)>();
         var validWeatherDataPoints = new List<WeatherDataPoint>();
-        var errors = new List<string>();
+
         var badData = new List<string>();
 
-        //Utgår från observationsgränser i Sveirge där giltighetsintervallet är satt mellan -60 och +40 grader celsius, tar höjd med 10 grader åt vardera håll för framtida förändringar.
-        var MinTemp = -70;
-        var MaxTemp = 50;
+        //Utgår från observationsgränser i Sverige där giltighetsintervallet är satt mellan -60 och +40 grader celsius, tar höjd med 5 grader extra åt vardera håll för framtida förändringar.
+        var MinTemp = -65;
+        var MaxTemp = +45;
 
         for (int i = 0; i < lines.Length; i++)
         {
@@ -39,6 +53,8 @@ public class WeatherDataImporter(FailSafeWeatherMonitorDbContext _db)
             string temperature = "";
             string humidity = "";
 
+
+            //Bryta ur metod ?
             try
             {
                 using var doc = JsonDocument.Parse(json);
@@ -62,7 +78,7 @@ public class WeatherDataImporter(FailSafeWeatherMonitorDbContext _db)
             // Validera indata & dubbletter
             if (string.IsNullOrWhiteSpace(stationName) || stationName.Length > 50)
             {
-                errors.Add($"Rad {rowNumber}: Stationsnamn: Ogiltigt '{stationName}'");
+                errors.Add($"Rad {rowNumber}: Stationsnamn: Ogiltigt värde '{stationName}'");
                 badData.Add(lines[i]);
                 continue;
             }
@@ -74,8 +90,7 @@ public class WeatherDataImporter(FailSafeWeatherMonitorDbContext _db)
                 continue;
             }
 
-            temperature = temperature.Replace(',', '.');
-            if (!double.TryParse(temperature, CultureInfo.InvariantCulture, out double parsedTemperature))
+            if (!TryParseDouble(temperature, out double parsedTemperature))
             {
 
                 errors.Add($"Rad {rowNumber}: Temperatur: Ogiltigt värde '{temperature}'.");
@@ -84,29 +99,29 @@ public class WeatherDataImporter(FailSafeWeatherMonitorDbContext _db)
 
             }
 
-            if (parsedTemperature < MinTemp || parsedTemperature > MaxTemp)
+            if (!double.IsFinite(parsedTemperature) || parsedTemperature < MinTemp || parsedTemperature > MaxTemp)
             {
-                errors.Add($"Rad {rowNumber}: Temperatur: Ogiltigt värde '{temperature}' ligger utanför giltigt intervall.");
+                errors.Add($"Rad {rowNumber}: Temperatur: '{temperature}' är ogiltig eller ligger utanför giltigt intervall {MinTemp} - {MaxTemp} °C.");
                 badData.Add(lines[i]);
                 continue;
             }
 
-            humidity = humidity.Replace(',', '.');
-            if (!double.TryParse(humidity, CultureInfo.InvariantCulture, out double parsedHumidity))
+
+            if (!TryParseDouble(humidity, out double parsedHumidity))
             {
                 errors.Add($"Rad {rowNumber}: Luftfuktigheten: Ogiltigt värde '{humidity}'.");
                 badData.Add(lines[i]);
                 continue;
             }
 
-            if (parsedHumidity < 0 || parsedHumidity > 100)
+            if (!double.IsFinite(parsedHumidity) || parsedHumidity < 0 || parsedHumidity > 100)
             {
-                errors.Add($"Rad {rowNumber}: Luftfuktigheten: Ogiltigt värde '{humidity}'");
+                errors.Add($"Rad {rowNumber}: Luftfuktigheten: '{humidity}' är ogiltig eller ligger utanför giltigt intervall (0-100 %)");
                 badData.Add(lines[i]);
                 continue;
             }
 
-            if (existingData.Contains((stationName.ToUpper(), parsedTimestamp)) || !seenInFile.Add((stationName.ToUpper(), parsedTimestamp)))
+            if (existingData.Contains((stationName.ToUpperInvariant(), parsedTimestamp)) || !seenInFile.Add((stationName.ToUpperInvariant(), parsedTimestamp)))
             {
                 errors.Add($"Rad {rowNumber}: Stationsnamn: Dubblett av '{stationName}'");
                 badData.Add(lines[i]);
@@ -123,27 +138,51 @@ public class WeatherDataImporter(FailSafeWeatherMonitorDbContext _db)
                 Humidity = parsedHumidity,
                 DataSource = "JSON-File"
             });
+
         }
 
-        File.WriteAllLines("bad_data.log", badData);
+        await TryWriteBadDataLogAsync(badData, errors);
 
-
-        try
+        if (!await TrySaveAsync(validWeatherDataPoints, errors))
         {
-            _db.WeatherDataPoints.AddRange(validWeatherDataPoints);
-            _db.SaveChanges();
+            return new ImportResult(0, badData.Count, errors);
         }
-        catch (Exception ex)
-        {
-            errors.Add($"Fel:Gick ej att spara till databas: {ex.Message}");
-            return new ImportResult(0, errors);
-        }
-        return new ImportResult(validWeatherDataPoints.Count, errors);
 
+        return new ImportResult(validWeatherDataPoints.Count, badData.Count, errors);
     }
 
 
-private static string GetField(JsonElement root,string fieldName)
+
+
+
+    private static async Task TryWriteBadDataLogAsync(List<string> badData, List<string> errors)
+    {
+        try
+        {
+            var logPath = Path.Combine(AppContext.BaseDirectory, "bad_data.log");
+            await File.WriteAllLinesAsync(logPath, badData);
+        }
+        catch (Exception ex)
+        {
+            errors.Add($"Fel: Gick ej att skriva bad_data.log: {ex.Message}");
+        }
+    }
+    private async Task<bool> TrySaveAsync(List<WeatherDataPoint> points, List<string> errors)
+    {
+        try
+        {
+            await _db.WeatherDataPoints.AddRangeAsync(points);
+            await _db.SaveChangesAsync();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            errors.Add($"Fel: Gick ej att spara till databas: {ex.Message}");
+            return false;
+        }
+    }
+
+    private static string GetField(JsonElement root, string fieldName)
     {
         if (root.TryGetProperty(fieldName, out var name))
         {
@@ -159,4 +198,15 @@ private static string GetField(JsonElement root,string fieldName)
         }
         return "";
     }
+
+    private static bool TryParseDouble(string text, out double result)
+    {
+        if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out result))
+            return true;
+        else
+        {
+            return double.TryParse(text, NumberStyles.Float, new CultureInfo("sv-SE"), out result);
+        }
+    }
+
 }
