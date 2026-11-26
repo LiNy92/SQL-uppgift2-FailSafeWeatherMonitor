@@ -99,9 +99,19 @@ internal class Program
         var importFile = new WeatherDataImporter(_db);
         try
         {
-            var result = await importFile.ImportFromTableFileAsync("weather_data.json");
-
-            AnsiConsole.MarkupLine($"[PaleGreen3_1]Import klar![/] Godkända: [bold]{result.ImportedCount}[/] | Avvisade: [bold]{result.RejectedCount}[/]");
+            var result = await importFile.ImportFromFileAsync("weather_data.json");
+            if (result.ImportedCount > 0)
+            {
+                AnsiConsole.MarkupLine($"[PaleGreen3_1]Import klar![/] Godkända: [bold]{result.ImportedCount}[/] | Avvisade: [bold]{result.RejectedCount}[/]");
+            }
+            else if (result.RejectedCount > 0)
+            {
+                AnsiConsole.MarkupLine($"[yellow]Import genomförd men inga rader godkändes. Antal avvisade: {result.RejectedCount}[/]");
+            }
+            else
+            {
+                AnsiConsole.MarkupLine($"[red] Ingen import genomfördes.[/]");
+            }
             foreach (var err in result.Errors)
             {
                 AnsiConsole.MarkupLine($"  - {Markup.Escape(err)}");
@@ -121,7 +131,6 @@ internal class Program
             AnsiConsole.MarkupLine($"[red]Databasanslutningen är ogiltig:[/] {Markup.Escape(ex.Message)}");
         }
 
-        await Task.CompletedTask;
     }
 
 
@@ -165,7 +174,6 @@ internal class Program
         var minTemp = points.Min(p => p.Temperature);
         var maxTemp = points.Max(p => p.Temperature);
         var avgTemp = points.Average(p => p.Temperature);
-        var avgHumidity = points.Average(p => p.Humidity);
 
         var summaryTable = new Table()
             .Title($"[bold]Statistik för {Markup.Escape(stationName)}[/]")
@@ -175,11 +183,7 @@ internal class Program
             .AddRow("Antal mätningar", points.Count.ToString())
             .AddRow("Lägsta temperatur", $"{minTemp:0.0} °C")
             .AddRow("Högsta temperatur", $"{maxTemp:0.0} °C")
-            .AddRow("Medeltemperatur", $"{avgTemp:0.0} °C")
-            .AddRow("Medelluftfuktighet", $"{avgHumidity:0.0} %");
-
-        AnsiConsole.Write(summaryTable);
-        Console.WriteLine();
+            .AddRow("Medeltemperatur", $"{avgTemp:0.0} °C");
 
         var table = new Table()
             .Title($"[bold]Mätningar för {Markup.Escape(stationName)}[/]")
@@ -199,6 +203,6 @@ internal class Program
             );
         }
 
-        AnsiConsole.Write(table);
+        AnsiConsole.Write(new Columns(table, summaryTable));
     }
 }

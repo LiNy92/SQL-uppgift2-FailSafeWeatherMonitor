@@ -9,7 +9,7 @@ namespace FailSafeWeatherMonitor.Data;
 public record ImportResult(int ImportedCount, int RejectedCount, List<string> Errors);
 public class WeatherDataImporter(FailSafeWeatherMonitorDbContext _db)
 {
-    public async Task<ImportResult> ImportFromTableFileAsync(string filePath)
+    public async Task<ImportResult> ImportFromFileAsync(string filePath)
     {
         var lines = await File.ReadAllLinesAsync(filePath);
         var errors = new List<string>();
@@ -29,10 +29,20 @@ public class WeatherDataImporter(FailSafeWeatherMonitorDbContext _db)
             errors.Add($"Kunde inte läsa befintliga mätningar från databasen: {ex.Message}");
             return new ImportResult(0, 0, errors);
         }
+        catch(InvalidOperationException ex)
+        {
+            errors.Add($"Ingen åtkomst till databasen. Kontrollera databasanslutningen. Felmeddelande: {ex.GetBaseException().Message}");
+            return new ImportResult(0, 0, errors);
+        }
+        catch(Exception ex)
+        {
+            errors.Add($"Ett oväntat fel uppstod när befintliga mätningar lästes från databasen: {ex.Message}");
+            return new ImportResult(0, 0, errors);
+        }
         var seenInFile = new HashSet<(string, DateTime)>();
         var validWeatherDataPoints = new List<WeatherDataPoint>();
-
         var badData = new List<string>();
+        var duplicateRowsCount = 0;
 
         //Utgår från observationsgränser i Sverige där giltighetsintervallet är satt mellan -60 och +40 grader celsius, tar höjd med 5 grader extra åt vardera håll för framtida förändringar.
         var MinTemp = -65;
@@ -124,7 +134,7 @@ public class WeatherDataImporter(FailSafeWeatherMonitorDbContext _db)
             if (existingData.Contains((stationName.ToUpperInvariant(), parsedTimestamp)) || !seenInFile.Add((stationName.ToUpperInvariant(), parsedTimestamp)))
             {
                 errors.Add($"Rad {rowNumber}: Stationsnamn: Dubblett av '{stationName}'");
-                badData.Add(lines[i]);
+                duplicateRowsCount++;
                 continue;
             }
 
@@ -145,10 +155,10 @@ public class WeatherDataImporter(FailSafeWeatherMonitorDbContext _db)
 
         if (!await TrySaveAsync(validWeatherDataPoints, errors))
         {
-            return new ImportResult(0, badData.Count, errors);
+            return new ImportResult(0, badData.Count + duplicateRowsCount, errors);
         }
 
-        return new ImportResult(validWeatherDataPoints.Count, badData.Count, errors);
+        return new ImportResult(validWeatherDataPoints.Count, badData.Count + duplicateRowsCount, errors);
     }
 
 

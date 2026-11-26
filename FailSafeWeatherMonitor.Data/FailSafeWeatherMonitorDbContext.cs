@@ -11,9 +11,6 @@ public class FailSafeWeatherMonitorDbContext : DbContext
 {
     public DbSet<WeatherDataPoint> WeatherDataPoints { get; set; }
 
-
-
-
     //Konstruktorer
     public FailSafeWeatherMonitorDbContext()
     {
