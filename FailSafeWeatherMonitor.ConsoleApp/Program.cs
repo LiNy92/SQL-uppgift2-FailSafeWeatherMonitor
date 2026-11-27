@@ -31,8 +31,6 @@ internal class Program
 
 
 
-
-
     private static string ShowMainMenu()
     {
         return AnsiConsole.Prompt(
