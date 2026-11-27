@@ -30,7 +30,7 @@ public class FailSafeWeatherMonitorDbContext : DbContext
                 .SetBasePath(AppContext.BaseDirectory)
                 .AddJsonFile("appsettings.json")
                 //(Azure SQL) Använde dessa två rader nedan för att köra mot molnet.
-                //La mitt lösenord i UserSecrets vid uppladdning till molnet. Kommenterar bort för funktion vid rättning.
+                //La mitt lösenord i UserSecrets vid uppladdning till molnet.Kommenterat bort för funktion till lokala-databasen vid rättning.
                 //.AddJsonFile("appsettings.Production.json", optional: true)
                 //.AddUserSecrets("2ab4fe72-44df-4952-9719-b14901e6a2a8")
 
