@@ -13,6 +13,8 @@ Appen kör lokalt som standard mot LocalDB via appsettings.json.
 
 Skärmdumpar från Azure:
 Vid skapandet av databasen i molnet kördes de två avkommenterade raderna i FailSafeWeatherMonitorDbContext.
-Raderna innehåller "appsettings.Production.json" och tillägg av User Secrets för att ej synliggöra lösenordet till GitHub. Detta är därmed ej upprepningsbart pga att lösenordet finns i User Secrets och molndatabasen är raderad.
-I bilderna syns det att det finns data på 192 rader. De 191 som är inlästa från fil och 1 från API.
+Raderna innehåller "appsettings.Production.json" och tillägg av User Secrets (privat) för att ej synliggöra lösenordet till GitHub. Detta är därmed ej upprepningsbart pga att lösenordet finns i User Secrets och molndatabasen är raderad.
+I bilderna syns det att databasen skapats och att data lästs in i 6 kolumner på 192 rader. De 191 som är inlästa från fil och 1 från API.
 
+![Tabellerna i Azure](docs/SQL-Azure-tabeller.png)
+![Data i Azure](docs/SQL-Azure-data.png)
