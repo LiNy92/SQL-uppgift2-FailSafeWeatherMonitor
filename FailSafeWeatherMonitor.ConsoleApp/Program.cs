@@ -1,61 +1,25 @@
 ﻿using FailSafeWeatherMonitor.Data;
 using Microsoft.EntityFrameworkCore;
 using Spectre.Console;
-using System.Text.Json;
 
 namespace FailSafeWeatherMonitor.ConsoleApp;
 
 
 internal class Program
 {
+
     static async Task Main(string[] args)
     {
-        using var _db = new FailSafeWeatherMonitorDbContext();
+        using var db = new FailSafeWeatherMonitorDbContext();
         while (true)
         {
-            var choice = AnsiConsole.Prompt(
-                new SelectionPrompt<string>()
-                .Title("[bold][NavajoWhite1]=== Weather Monitor ===[/][/]")
-               .HighlightStyle(new Style(foreground: Color.LightPink3))
-                .AddChoices(
-                "Importera historisk data från fil",
-                "Hämta live-data från Api",
-                "Visa väderstatistik",
-                "Avsluta program"));
+            var choice = ShowMainMenu();
 
             AnsiConsole.MarkupLine($"[NavajoWhite1]{choice}[/]");
 
+            if (!await RunChoiceAsync(choice, db))
+                return;
 
-            switch (choice)
-            {
-                case "Importera historisk data från fil":
-                    {
-                        await ImportJsonFile(_db);
-
-                        break;
-                    }
-
-                case "Hämta live-data från Api":
-                    {
-                       await ShowWeatherApiImport(_db);
-                        break;
-                    }
-
-                case "Visa väderstatistik":
-                    {
-                        var selectedStation = await ShowStations(_db);
-
-                        if (!string.IsNullOrWhiteSpace(selectedStation))
-                        {
-                            await ShowWeatherStats(selectedStation, _db);
-                        }
-                        break;
-                    }
-                case "Avsluta program":
-                    {
-                        return;
-                    }
-            }
             Console.WriteLine();
             AnsiConsole.Prompt(
     new TextPrompt<string>("Tryck [PaleGreen3_1]Enter[/] för att återgå till meny.")
@@ -63,34 +27,73 @@ internal class Program
             Console.WriteLine();
 
         }
-
-
-
-
     }
 
 
 
-    private static async Task ShowWeatherApiImport(FailSafeWeatherMonitorDbContext _db)
-        {
-        var apiImporter = new WeatherApiImporter(_db);
 
-        var result = await apiImporter.ImportGothenburgWeatherAsync();
-        if (result.ImportedCount > 0)
+
+    private static string ShowMainMenu()
+    {
+        return AnsiConsole.Prompt(
+            new SelectionPrompt<string>()
+                .Title("[bold][NavajoWhite1]=== Weather Monitor ===[/][/]")
+                .HighlightStyle(new Style(foreground: Color.LightPink3))
+                .AddChoices(
+                    MenuChoices.ImportFile,
+                    MenuChoices.FetchApi,
+                    MenuChoices.ShowStats,
+                    MenuChoices.Exit));
+    }
+
+    private static async Task<bool> RunChoiceAsync(string choice, FailSafeWeatherMonitorDbContext db)
+    {
+        switch (choice)
         {
-            AnsiConsole.MarkupLine($"[PaleGreen3_1]Import klar![/] Sparade: [bold]{result.ImportedCount}[/]");
+            case MenuChoices.ImportFile:
+                await ImportJsonFile(db);
+                return true;
+            case MenuChoices.FetchApi:
+                await ShowWeatherApiImport(db);
+                return true;
+            case MenuChoices.ShowStats:
+                await ShowWeatherStatistics(db);
+                return true;
+            case MenuChoices.Exit:
+                return false;
+            default:
+                return true;
         }
-        else if (result.RejectedCount > 0)
+    }
+
+
+    private static async Task ShowWeatherApiImport(FailSafeWeatherMonitorDbContext _db)
+    {
+        try
         {
-            AnsiConsole.MarkupLine($"[yellow]Ingen ny mätning sparades.[/] Avvisade: [bold]{result.RejectedCount}[/]");
+            var apiImporter = new WeatherApiImporter(_db);
+
+            var result = await apiImporter.ImportGothenburgWeatherAsync();
+            if (result.ImportedCount > 0)
+            {
+                AnsiConsole.MarkupLine($"[PaleGreen3_1]Import klar![/] Sparade: [bold]{result.ImportedCount}[/]");
+            }
+            else if (result.RejectedCount > 0)
+            {
+                AnsiConsole.MarkupLine($"[yellow]Ingen ny mätning sparades.[/] Avvisade: [bold]{result.RejectedCount}[/]");
+            }
+            else
+            {
+                AnsiConsole.MarkupLine("[red]Importen misslyckades.[/]");
+            }
+            foreach (var err in result.Errors)
+            {
+                AnsiConsole.MarkupLine($"  - {Markup.Escape(err)}");
+            }
         }
-        else
+        catch (Exception ex)
         {
-            AnsiConsole.MarkupLine("[red]Importen misslyckades.[/]");
-        }
-        foreach (var err in result.Errors)
-        {
-           AnsiConsole.MarkupLine($"  - {Markup.Escape(err)}");
+            AnsiConsole.MarkupLine($"[red]Oväntat fel vid API-anrop:[/] {Markup.Escape(ex.Message)}");
         }
     }
 
@@ -118,17 +121,13 @@ internal class Program
             }
 
         }
-        catch (JsonException ex)
-        {
-            AnsiConsole.MarkupLine($"[red]Ogiltig Json-fil[/] '{Markup.Escape(ex.Message)}'");
-        }
         catch (IOException ex)
         {
             AnsiConsole.MarkupLine($"[red]Kunde inte läsa JSON-filen:[/] {Markup.Escape(ex.Message)}");
         }
-        catch (ArgumentException ex)
+        catch (Exception ex)
         {
-            AnsiConsole.MarkupLine($"[red]Databasanslutningen är ogiltig:[/] {Markup.Escape(ex.Message)}");
+            AnsiConsole.MarkupLine($"[red]Oväntat fel.[/] {Markup.Escape(ex.Message)}");
         }
 
     }
@@ -152,12 +151,9 @@ internal class Program
             .Title("[bold][NavajoWhite1]=== Välj mätstation ===[/][/]")
                .HighlightStyle(new Style(foreground: Color.LightPink3))
                 .AddChoices(stations));
-
     }
 
-
-
-    private static async Task ShowWeatherStats(string stationName, FailSafeWeatherMonitorDbContext _db)
+    private static async Task CreateTablesWeatherStats(string stationName, FailSafeWeatherMonitorDbContext _db)
     {
         var points = await _db.WeatherDataPoints
             .AsNoTracking()
@@ -205,4 +201,35 @@ internal class Program
 
         AnsiConsole.Write(new Columns(table, summaryTable));
     }
+
+
+    private static async Task ShowWeatherStatistics(FailSafeWeatherMonitorDbContext db)
+    {
+        try
+        {
+            var selectedStation = await ShowStations(db);
+
+            if (!string.IsNullOrWhiteSpace(selectedStation))
+            {
+                await CreateTablesWeatherStats(selectedStation, db);
+            }
+        }
+        catch (InvalidOperationException ex)
+        {
+            AnsiConsole.MarkupLine(
+                $"[red]Kunde inte läsa statistik från databasen:[/] " +
+                $"{Markup.Escape(ex.GetBaseException().Message)}");
+        }
+        catch (System.Data.Common.DbException ex)
+        {
+            AnsiConsole.MarkupLine(
+                $"[red]Databasfel när statistiken lästes:[/] " +
+                $"{Markup.Escape(ex.Message)}");
+        }
+        catch (Exception ex)
+        {
+            AnsiConsole.MarkupLine($"[red]Oväntat fel:[/] {Markup.Escape(ex.Message)}");
+        }
+    }
+
 }

@@ -1,6 +1,5 @@
 ﻿using FailSafeWeatherMonitor.Core;
 using Microsoft.EntityFrameworkCore;
-using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 
 namespace FailSafeWeatherMonitor.Data;
@@ -30,9 +29,17 @@ public class FailSafeWeatherMonitorDbContext : DbContext
             var config = new ConfigurationBuilder()
                 .SetBasePath(AppContext.BaseDirectory)
                 .AddJsonFile("appsettings.json")
+                //(Azure SQL) Använde dessa två rader nedan för att köra mot molnet.
+                //La mitt lösenord i UserSecrets vid uppladdning till molnet. Kommenterar bort för funktion vid rättning.
+                //.AddJsonFile("appsettings.Production.json", optional: true)
+                //.AddUserSecrets("2ab4fe72-44df-4952-9719-b14901e6a2a8")
+
                 .Build();
 
-            var connectionString = config.GetConnectionString("DefaultConnection");
+            var connectionString = config.GetConnectionString("DefaultConnection")
+                ?? throw new InvalidOperationException(
+                    "Anslutningssträngen 'DefaultConnection' saknas i appsettings.json.");
+
             optionsBuilder.UseSqlServer(connectionString);
 
         }

@@ -84,7 +84,7 @@ public class WeatherApiImporter(FailSafeWeatherMonitorDbContext _db)
         }
         catch (Exception ex)
         {
-            errors.Add($"Kunde inte kontrollera eller spara mätningen i databasen: {ex.Message}");
+            errors.Add($"Kunde inte kontrollera eller spara mätningen i databasen: {ex.GetBaseException().Message}");
             return new ImportResult(0, 0, errors);
         }
     }
